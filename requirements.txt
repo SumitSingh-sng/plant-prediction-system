@@ -1,6 +1,6 @@
 numpy
 pandas
 matplotlib
-opencv-python
+opencv-python-headlesss
 tensorflow
 streamlit
