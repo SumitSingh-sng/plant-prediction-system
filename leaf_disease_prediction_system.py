@@ -6,132 +6,116 @@ import cv2
 import random
 import os
 from os import listdir
-from PIL import Image
-from sklearn.preprocessing import label_binarize,  LabelBinarizer
-from keras.preprocessing import image
-from keras.preprocessing.image import img_to_array, array_to_img
+from tensorflow.keras.preprocessing.image import img_to_array, array_to_img
 from tensorflow.keras.optimizers import Adam
-from keras.models import Sequential
-from keras.layers import Conv2D, MaxPooling2D
-from keras.layers import Activation, Flatten, Dropout, Dense
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dropout, Dense
 from sklearn.model_selection import train_test_split
-from keras.models import model_from_json
 from tensorflow.keras.utils import to_categorical
 
-
-# Plotting 12 images to check dataset
-#Now we will observe some of the iamges that are their in our dataset. We will plot 12 images here using the matplotlib library.
-plt.figure(figsize=(12,12))
-path = "../input/leaf-image-dataset/Plant_images/Potato___Early_blight"
-for i in range(1,17):
-    plt.subplot(4,4,i)
-    plt.tight_layout()
-    rand_img = imread(path +'/'+ random.choice(sorted(os.listdir(path))))
-    plt.imshow(rand_img)
-    plt.xlabel(rand_img.shape[1], fontsize = 10)#width of image
-    plt.ylabel(rand_img.shape[0], fontsize = 10)#height of image
-
-#Converting Images to array 
+# Helper function to convert images to arrays
 def convert_image_to_array(image_dir):
     try:
         image = cv2.imread(image_dir)
-        if image is not None :
-            image = cv2.resize(image, (256,256))  
-            #image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) 
+        if image is not None:
+            image = cv2.resize(image, (256, 256))
             return img_to_array(image)
-        else :
+        else:
+            print(f"Invalid image: {image_dir}")
             return np.array([])
     except Exception as e:
-        print(f"Error : {e}")
+        print(f"Error : {e} for image {image_dir}")
         return None
 
+# Path to the dataset
 dir = "../input/leaf-image-dataset/Plant_images"
 root_dir = listdir(dir)
-image_list, label_list = [], []
-all_labels = ['Corn-Common_rust', 'Potato-Early_blight', 'Tomato-Bacterial_spot']
-binary_labels = [0,1,2]
-temp = -1
 
-# Reading and converting image to numpy array
-#Now we will convert all the images into numpy array.
+# Labels and binary mappings
+all_labels = ['Corn-Common_rust', 'Potato-Early_blight', 'Tomato-Bacterial_spot']
+binary_labels = {label: idx for idx, label in enumerate(all_labels)}
+
+# Preparing image data and labels
+image_list, label_list = [], []
 
 for directory in root_dir:
-  plant_image_list = listdir(f"{dir}/{directory}")
-  temp += 1
-  for files in plant_image_list:
-    image_path = f"{dir}/{directory}/{files}"
-    image_list.append(convert_image_to_array(image_path))
-    label_list.append(binary_labels[temp])
-    
+    if directory in all_labels:
+        plant_image_list = listdir(f"{dir}/{directory}")
+        for files in plant_image_list:
+            image_path = f"{dir}/{directory}/{files}"
+            img_array = convert_image_to_array(image_path)
+            if img_array.size > 0:
+                image_list.append(img_array)
+                label_list.append(binary_labels[directory])
 
-
-# Visualize the number of classes count
-label_counts = pd.DataFrame(label_list).value_counts()
-label_counts.head()
-
-#it is a balanced dataset as you can see
-
-#Next we will observe the shape of the image.
-image_list[0].shape
-
-#Checking the total number of the images which is the length of the labels list.
+# Convert lists to arrays
+image_list = np.array(image_list, dtype=np.float32) / 255.0  # Normalize pixel values
 label_list = np.array(label_list)
-label_list.shape
 
-x_train, x_test, y_train, y_test = train_test_split(image_list, label_list, test_size=0.2, random_state = 10) 
+# Split into training and testing data
+x_train, x_test, y_train, y_test = train_test_split(
+    image_list, label_list, test_size=0.2, random_state=10
+)
 
-#Now we will normalize the dataset of our images. As pixel values ranges from 0 to 255 so we will divide each image pixel with 255 to normalize the dataset.
-x_train = np.array(x_train, dtype=np.float16) / 225.0
-x_test = np.array(x_test, dtype=np.float16) / 225.0
-x_train = x_train.reshape( -1, 256,256,3)
-x_test = x_test.reshape( -1, 256,256,3)
+# One-hot encode the labels
+y_train = to_categorical(y_train, num_classes=len(all_labels))
+y_test = to_categorical(y_test, num_classes=len(all_labels))
 
-y_train = to_categorical(y_train)
-y_test = to_categorical(y_test)
+# Define the CNN model
+model = Sequential([
+    Conv2D(32, (3, 3), padding="same", activation="relu", input_shape=(256, 256, 3)),
+    MaxPooling2D(pool_size=(3, 3)),
+    Conv2D(16, (3, 3), padding="same", activation="relu"),
+    MaxPooling2D(pool_size=(2, 2)),
+    Flatten(),
+    Dense(128, activation="relu"),
+    Dropout(0.5),
+    Dense(len(all_labels), activation="softmax")
+])
 
-model = Sequential()
-model.add(Conv2D(32, (3, 3), padding="same",input_shape=(256,256,3), activation="relu"))
-model.add(MaxPooling2D(pool_size=(3, 3)))
-model.add(Conv2D(16, (3, 3), padding="same", activation="relu"))
-model.add(MaxPooling2D(pool_size=(2, 2)))
-model.add(Flatten())
-model.add(Dense(8, activation="relu"))
-model.add(Dense(3, activation="softmax"))
-model.summary()
+# Compile the model
+model.compile(
+    loss="categorical_crossentropy",
+    optimizer=Adam(learning_rate=0.0001),
+    metrics=["accuracy"]
+)
 
-model.compile(loss = 'categorical_crossentropy', optimizer = Adam(0.0001),metrics=['accuracy'])
+# Split training data into training and validation datasets
+x_train, x_val, y_train, y_val = train_test_split(
+    x_train, y_train, test_size=0.2, random_state=10
+)
 
-#Next we will split the dataset into validation and training data.
-# Splitting the training data set into training and validation data sets
-x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size = 0.2)
-
-# Training the model
+# Train the model
 epochs = 50
 batch_size = 128
-history = model.fit(x_train, y_train, batch_size = batch_size, epochs = epochs, 
-                    validation_data = (x_val, y_val))
+history = model.fit(
+    x_train, y_train,
+    batch_size=batch_size,
+    epochs=epochs,
+    validation_data=(x_val, y_val),
+    verbose=1
+)
 
-#Plot the training history
+# Plot training history
 plt.figure(figsize=(12, 5))
-plt.plot(history.history['accuracy'], color='r')
-plt.plot(history.history['val_accuracy'], color='b')
+plt.plot(history.history['accuracy'], label='Training Accuracy', color='r')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy', color='b')
 plt.title('Model Accuracy')
 plt.ylabel('Accuracy')
 plt.xlabel('Epochs')
-plt.legend(['train', 'val'])
-
+plt.legend()
 plt.show()
 
+# Evaluate the model
 print("[INFO] Calculating model accuracy")
-scores = model.evaluate(x_test, y_test)
-print(f"Test Accuracy: {scores[1]*100}")
+scores = model.evaluate(x_test, y_test, verbose=0)
+print(f"Test Accuracy: {scores[1] * 100:.2f}%")
 
-y_pred = model.predict(x_test)
+# Test prediction example
+img = array_to_img(x_test[0])
+plt.imshow(img)
+plt.title("Sample Test Image")
+plt.show()
 
-# Plotting image to compare
-img = array_to_img(x_test[10])
-img
-
-# Finding max value from predition list and comaparing original value vs predicted
-print("Originally : ",all_labels[np.argmax(y_test[10])])
-print("Predicted : ",all_labels[np.argmax(y_pred[10])])
+print("Originally:", all_labels[np.argmax(y_test[0])])
+print("Predicted:", all_labels[np.argmax(model.predict(np.expand_dims(x_test[0], axis=0)))])
